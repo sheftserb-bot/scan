@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#111418">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Сканер">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+<title>Сканер</title>
+</head>
+<body>
+
+<!-- ГЛАВНЫЙ ЭКРАН -->
+<section id="home" class="screen active">
+  <header class="bar"><h1>Сканер</h1><span id="engineState" class="chip">загрузка движка…</span></header>
+  <main class="home-body">
+    <div id="pagesEmpty" class="empty">
+      <div class="empty-icon">📄</div>
+      <p>Нет страниц. Нажмите «Снять» или «Из галереи».</p>
+    </div>
+    <div id="pageGrid" class="grid"></div>
+  </main>
+  <footer class="dock">
+    <button id="btnCamera" class="primary">📷 Снять</button>
+    <button id="btnGallery">🖼 Из галереи</button>
+    <button id="btnPdf" disabled>PDF</button>
+    <button id="btnMenu">⋯</button>
+  </footer>
+  <input id="fileCamera" type="file" accept="image/*" capture="environment" hidden>
+  <input id="fileGallery" type="file" accept="image/*" multiple hidden>
+</section>
+
+<!-- РЕДАКТОР ГРАНИЦ -->
+<section id="crop" class="screen">
+  <header class="bar">
+    <button id="cropCancel" class="ghost">‹ Отмена</button>
+    <h1>Границы листа</h1>
+    <button id="cropAuto" class="ghost">Авто</button>
+  </header>
+  <main class="stage" id="cropStage">
+    <canvas id="cropCanvas"></canvas>
+    <canvas id="loupe" width="110" height="110" hidden></canvas>
+  </main>
+  <footer class="dock">
+    <button id="cropRotL">⟲</button>
+    <button id="cropRotR">⟳</button>
+    <button id="cropFull">Весь кадр</button>
+    <button id="cropDone" class="primary">Готово ›</button>
+  </footer>
+</section>
+
+<!-- ПРОСМОТР / ФИЛЬТРЫ -->
+<section id="view" class="screen">
+  <header class="bar">
+    <button id="viewBack" class="ghost">‹ Назад</button>
+    <h1 id="viewTitle">Страница</h1>
+    <button id="viewDelete" class="ghost danger">Удалить</button>
+  </header>
+  <main class="stage"><canvas id="viewCanvas"></canvas></main>
+  <div class="filters" id="filters">
+    <button data-f="original">Оригинал</button>
+    <button data-f="auto" class="on">Документ</button>
+    <button data-f="color">Цвет+</button>
+    <button data-f="gray">Серый</button>
+    <button data-f="bw">Ч/Б</button>
+  </div>
+  <footer class="dock">
+    <button id="viewRecrop">Границы</button>
+    <button id="viewRotL">⟲</button>
+    <button id="viewRotR">⟳</button>
+    <button id="viewOcr">Текст</button>
+  </footer>
+</section>
+
+<!-- ТЕКСТ (OCR) -->
+<section id="ocr" class="screen">
+  <header class="bar">
+    <button id="ocrBack" class="ghost">‹ Назад</button>
+    <h1>Распознанный текст</h1>
+    <button id="ocrCopy" class="ghost">Копировать</button>
+  </header>
+  <main class="textwrap">
+    <div id="ocrProgress" class="progress"><div id="ocrBar"></div></div>
+    <textarea id="ocrText" spellcheck="false" placeholder="Идёт распознавание…"></textarea>
+  </main>
+  <footer class="dock">
+    <select id="ocrLang">
+      <option value="rus+eng">Русский + English</option>
+      <option value="eng">English</option>
+      <option value="lav+eng">Latviešu + English</option>
+      <option value="rus+lav+eng">RU + LV + EN</option>
+    </select>
+    <button id="ocrRun" class="primary">Распознать</button>
+  </footer>
+</section>
+
+<!-- МЕНЮ -->
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-card">
+    <h2>Меню</h2>
+    <label class="row">Размер страницы PDF
+      <select id="optPage">
+        <option value="auto">По фото</option>
+        <option value="a4">A4</option>
+        <option value="letter">Letter</option>
+      </select>
+    </label>
+    <label class="row">Качество PDF
+      <select id="optQuality">
+        <option value="0.92">Высокое</option>
+        <option value="0.8" selected>Среднее</option>
+        <option value="0.6">Малый размер</option>
+      </select>
+    </label>
+    <button id="btnClear" class="danger wide">Удалить все страницы</button>
+    <button id="btnCloseMenu" class="wide">Закрыть</button>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+<div id="busy" class="busy" hidden><div class="spin"></div><span id="busyText">Обработка…</span></div>
+
+<script src="lib/jspdf.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
