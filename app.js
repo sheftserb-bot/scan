@@ -10,6 +10,7 @@
   };
   let cv = null, cvReady = false, nextId = 1;
   const MAX_SRC = 3000;
+  const APP_VERSION = '6';
 
   /* ---------- утилиты ---------- */
   function show(id) {
@@ -460,6 +461,23 @@
     $('sheet').addEventListener('click', e => { if (e.target.id === 'sheet') $('sheet').hidden = true; });
     $('optPage').onchange = e => (state.opt.page = e.target.value);
     $('optQuality').onchange = e => (state.opt.quality = parseFloat(e.target.value));
+    $('menuTitle').textContent = 'Меню · версия ' + APP_VERSION;
+    $('btnUpdate').onclick = async () => {
+      if (state.pages.length && !confirm('Страницы в памяти пропадут при перезагрузке. Сначала сохраните PDF. Продолжить?')) return;
+      busy(true, 'Обновляю…');
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) { await reg.update(); await reg.unregister(); }
+        // сбрасываем только код приложения; тяжёлый движок остаётся в кэше
+        for (const k of await caches.keys()) {
+          const c = await caches.open(k);
+          for (const r of await c.keys()) {
+            if (!/opencv\.js|jspdf|jszip|\.ttf/.test(r.url)) await c.delete(r);
+          }
+        }
+      } catch (e) { console.error(e); }
+      location.reload();
+    };
     $('btnClear').onclick = () => {
       if (!state.pages.length || !confirm('Удалить все страницы?')) return;
       state.pages = []; $('sheet').hidden = true; refreshHome();
@@ -473,6 +491,18 @@
     core.onload = () => { loadEngine(); };
     document.head.appendChild(core);
     bindHome(); bindCrop(); bindView(); bindOcr(); refreshHome();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').then(reg => {
+        // проверяем обновления при каждом возвращении в приложение
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+      }).catch(() => {});
+      // когда новая версия взяла управление: если ничего не потеряем — обновляемся сразу
+      let first = !navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (first) { first = false; return; }
+        if (!state.pages.length) location.reload();
+        else toast('Вышло обновление. Применится при следующем запуске', 5000);
+      });
+    }
   });
 })();
