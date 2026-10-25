@@ -314,24 +314,43 @@
       try { await navigator.clipboard.writeText(t); toast('Скопировано'); }
       catch (e) { $('ocrText').select(); document.execCommand('copy'); toast('Скопировано'); }
     };
+    const STATUS = {
+      'loading tesseract core': 'Загружаю модуль…',
+      'initializing tesseract': 'Запускаю…',
+      'loading language traineddata': 'Загружаю язык (один раз)…',
+      'initializing api': 'Подготовка…',
+      'recognizing text': 'Распознаю…'
+    };
+    const workers = {};   // готовые распознаватели по языку — повторный запуск мгновенный
     $('ocrRun').onclick = async () => {
       const p = state.current; if (!p || !p.result) return;
       const btn = $('ocrRun'); btn.disabled = true;
-      $('ocrText').value = ''; $('ocrText').placeholder = 'Идёт распознавание…'; $('ocrBar').style.width = '3%';
+      const lang = $('ocrLang').value;
+      const ta = $('ocrText');
+      ta.value = ''; ta.placeholder = 'Подготовка…'; $('ocrBar').style.width = '3%';
       try {
-        if (!window.Tesseract) await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
-        const worker = await window.Tesseract.createWorker($('ocrLang').value, 1, {
-          logger: m => { if (m.status === 'recognizing text') $('ocrBar').style.width = Math.max(5, Math.round(m.progress * 100)) + '%'; }
-        });
-        // для OCR берём чёткую версию; ограничиваем размер
-        const src = p.result, k = Math.min(1, 2400 / Math.max(src.width, src.height));
+        if (!window.Tesseract) { ta.placeholder = 'Загружаю модуль распознавания…'; await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'); }
+        if (!workers[lang]) {
+          workers[lang] = await window.Tesseract.createWorker(lang, 1, {
+            langPath: 'https://tessdata.projectnaptha.com/4.0.0_fast',   // облегчённые модели: меньше и быстрее
+            logger: m => {
+              if (STATUS[m.status]) ta.placeholder = STATUS[m.status] + (m.progress ? ' ' + Math.round(m.progress * 100) + '%' : '');
+              if (m.status === 'recognizing text') $('ocrBar').style.width = Math.max(5, Math.round(m.progress * 100)) + '%';
+              else if (m.progress) $('ocrBar').style.width = Math.max(3, Math.round(m.progress * 40)) + '%';
+            }
+          });
+        }
+        // для телефона достаточно ~1700 px по длинной стороне: в 2 раза быстрее без потери читаемости
+        const src = p.result, k = Math.min(1, 1700 / Math.max(src.width, src.height));
         const tc = document.createElement('canvas'); tc.width = Math.round(src.width * k); tc.height = Math.round(src.height * k);
-        tc.getContext('2d').drawImage(src, 0, 0, tc.width, tc.height);
-        const { data } = await worker.recognize(tc);
-        $('ocrText').value = data.text.trim() || '(текст не найден)';
-        await worker.terminate();
+        const tx = tc.getContext('2d'); tx.fillStyle = '#fff'; tx.fillRect(0, 0, tc.width, tc.height);
+        tx.drawImage(src, 0, 0, tc.width, tc.height);
+        ta.placeholder = 'Распознаю…';
+        const { data } = await workers[lang].recognize(tc);
+        ta.value = data.text.trim() || '(текст не найден)';
       } catch (e) {
-        console.error(e); $('ocrText').placeholder = 'Не удалось распознать. Для первого запуска нужен интернет (загрузка языковых данных).';
+        console.error(e); delete workers[lang];
+        ta.placeholder = 'Не удалось распознать. Для первого запуска нужен интернет (загрузка языковых данных).';
         toast('Ошибка распознавания');
       }
       $('ocrBar').style.width = '0'; btn.disabled = false;
