@@ -314,6 +314,35 @@
       try { await navigator.clipboard.writeText(t); toast('Скопировано'); }
       catch (e) { $('ocrText').select(); document.execCommand('copy'); toast('Скопировано'); }
     };
+    // сохранить файл: лист «Поделиться» на телефоне (Файлы, Word, почта…) или обычная загрузка
+    async function saveBlob(blob, name, mime) {
+      const file = new File([blob], name, { type: mime });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: name }); return; }
+        catch (e) { if (e && e.name === 'AbortError') return; }
+      }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      toast('Файл сохранён');
+    }
+    const stamp = () => {
+      const d = new Date(), p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+    };
+    $('ocrWord').onclick = async () => {
+      const t = $('ocrText').value.trim();
+      if (!t) { toast('Сначала распознайте текст'); return; }
+      try {
+        const blob = await window.ScanExport.buildDocx(window.JSZip, t, 'blob');
+        await saveBlob(blob, `scan_${stamp()}.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      } catch (e) { console.error(e); toast('Не удалось создать документ'); }
+    };
+    $('ocrTxt').onclick = async () => {
+      const t = $('ocrText').value.trim();
+      if (!t) { toast('Сначала распознайте текст'); return; }
+      await saveBlob(new Blob([t], { type: 'text/plain;charset=utf-8' }), `scan_${stamp()}.txt`, 'text/plain');
+    };
     const STATUS = {
       'loading tesseract core': 'Загружаю модуль…',
       'initializing tesseract': 'Запускаю…',
@@ -347,7 +376,7 @@
         tx.drawImage(src, 0, 0, tc.width, tc.height);
         ta.placeholder = 'Распознаю…';
         const { data } = await workers[lang].recognize(tc);
-        ta.value = data.text.trim() || '(текст не найден)';
+        ta.value = window.ScanExport.reflow(data.text) || '(текст не найден)';
       } catch (e) {
         console.error(e); delete workers[lang];
         ta.placeholder = 'Не удалось распознать. Для первого запуска нужен интернет (загрузка языковых данных).';

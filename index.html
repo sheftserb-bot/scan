@@ -89,6 +89,10 @@
     <div id="ocrProgress" class="progress"><div id="ocrBar"></div></div>
     <textarea id="ocrText" spellcheck="false" placeholder="Идёт распознавание…"></textarea>
   </main>
+  <div class="dock" id="ocrExport">
+    <button id="ocrWord" class="primary">Сохранить в Word</button>
+    <button id="ocrTxt">TXT</button>
+  </div>
   <footer class="dock">
     <select id="ocrLang">
       <option value="rus+eng">Русский + English</option>
@@ -127,6 +131,8 @@
 <div id="busy" class="busy" hidden><div class="spin"></div><span id="busyText">Обработка…</span></div>
 
 <script src="lib/jspdf.umd.min.js"></script>
+<script src="lib/jszip.min.js"></script>
+<script src="export.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
