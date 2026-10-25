@@ -26,22 +26,38 @@
   /* ---------- загрузка OpenCV ---------- */
   function loadEngine() {
     const chip = $('engineState');
+    const t0 = Date.now();
+    const ticker = setInterval(() => {
+      if (!cvReady) chip.textContent = 'загрузка движка… ' + Math.round((Date.now() - t0) / 1000) + ' с';
+    }, 500);
+    const fail = msg => { clearInterval(ticker); chip.textContent = msg; chip.className = 'chip err'; };
+    const ready = m => {
+      cv = m; cvReady = true; clearInterval(ticker);
+      chip.textContent = 'готов'; chip.className = 'chip ok';
+    };
     const s = document.createElement('script');
     s.src = 'lib/opencv.js';
     s.async = true;
-    s.onerror = () => { chip.textContent = 'ошибка загрузки'; chip.className = 'chip err'; };
-    s.onload = () => {
-      const started = Date.now();
-      const poll = setInterval(() => {
-        const c = window.cv;
-        if (c && c.Mat) { clearInterval(poll); cv = c; cvReady = true; chip.textContent = 'готов'; chip.className = 'chip ok'; return; }
-        if (c && typeof c.then === 'function' && !poll._hooked) {
-          poll._hooked = true;
-          c.then(m => { cv = m; });
+    s.onerror = () => fail('ошибка загрузки');
+    s.onload = async () => {
+      try {
+        let c = window.cv;
+        if (c && c.Mat) return ready(c);
+        if (c && typeof c.then === 'function') {
+          // новые сборки OpenCV.js отдают Promise, который выдаёт готовый модуль
+          const m = await c;
+          if (m && m.Mat) return ready(m);
+          c = m || window.cv;
         }
-        if (cv && cv.Mat) { clearInterval(poll); cvReady = true; chip.textContent = 'готов'; chip.className = 'chip ok'; }
-        if (Date.now() - started > 90000) { clearInterval(poll); chip.textContent = 'таймаут'; chip.className = 'chip err'; }
-      }, 120);
+        // старый способ: ждём onRuntimeInitialized
+        if (c && c.Mat) return ready(c);
+        if (c) c.onRuntimeInitialized = () => ready(window.cv);
+        const w0 = Date.now();
+        const poll = setInterval(() => {
+          if (window.cv && window.cv.Mat) { clearInterval(poll); ready(window.cv); }
+          else if (Date.now() - w0 > 120000) { clearInterval(poll); fail('таймаут'); }
+        }, 200);
+      } catch (e) { console.error(e); fail('ошибка движка'); }
     };
     document.head.appendChild(s);
   }
