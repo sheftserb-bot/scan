@@ -71,7 +71,30 @@
     });
   }
 
-  const api = { reflow, buildDocx };
+  // PDF с текстом (A4, шрифт со встроенной кириллицей). fontB64 — base64 TTF.
+  function buildTextPdf(jsPDF, fontB64, text, type) {
+    const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'p', compress: true });
+    doc.addFileToVFS('LiberationSerif-Regular.ttf', fontB64);
+    doc.addFont('LiberationSerif-Regular.ttf', 'LiberationSerif', 'normal');
+    doc.setFont('LiberationSerif', 'normal');
+    const size = 12, lh = 5.6, gap = 3, mx = 20, top = 20, bottom = 20;
+    const pw = 210, ph = 297, width = pw - mx * 2;
+    doc.setFontSize(size);
+    let y = top;
+    const paras = String(text || '').split(/\n[ \t]*\n+/).map(s => s.trim()).filter(Boolean);
+    for (const p of paras) {
+      const lines = doc.splitTextToSize(p.replace(/\n/g, ' '), width);
+      for (const ln of lines) {
+        if (y + lh > ph - bottom) { doc.addPage(); y = top; }
+        doc.text(ln, mx, y, { baseline: 'top' });
+        y += lh;
+      }
+      y += gap;
+    }
+    return doc.output(type || 'blob');
+  }
+
+  const api = { reflow, buildDocx, buildTextPdf };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.ScanExport = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,7 +1,7 @@
 // Service worker: кэш для работы офлайн
-const CACHE = 'scanner-v4';
+const CACHE = 'scanner-v5';
 const ASSETS = [
-  './', './index.html', './style.css', './app.js', './core.js', './export.js', './lib/jszip.min.js', './manifest.json',
+  './', './index.html', './style.css', './app.js', './core.js', './export.js', './lib/jszip.min.js', './lib/LiberationSerif-Regular.ttf', './manifest.json',
   './lib/opencv.js', './lib/jspdf.umd.min.js',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'
 ];

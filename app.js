@@ -338,6 +338,24 @@
         await saveBlob(blob, `scan_${stamp()}.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
       } catch (e) { console.error(e); toast('Не удалось создать документ'); }
     };
+    let fontB64 = null;
+    async function loadFont() {
+      if (fontB64) return fontB64;
+      const buf = new Uint8Array(await (await fetch('lib/LiberationSerif-Regular.ttf')).arrayBuffer());
+      let bin = ''; const CH = 0x8000;
+      for (let i = 0; i < buf.length; i += CH) bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
+      return (fontB64 = btoa(bin));
+    }
+    $('ocrPdf').onclick = async () => {
+      const t = $('ocrText').value.trim();
+      if (!t) { toast('Сначала распознайте текст'); return; }
+      busy(true, 'Создаю PDF…'); await tick();
+      try {
+        const blob = window.ScanExport.buildTextPdf(window.jspdf.jsPDF, await loadFont(), t, 'blob');
+        busy(false);
+        await saveBlob(blob, `scan_${stamp()}.pdf`, 'application/pdf');
+      } catch (e) { console.error(e); busy(false); toast('Не удалось создать PDF'); }
+    };
     $('ocrTxt').onclick = async () => {
       const t = $('ocrText').value.trim();
       if (!t) { toast('Сначала распознайте текст'); return; }
