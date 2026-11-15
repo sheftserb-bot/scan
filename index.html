@@ -114,15 +114,11 @@ async function loadASR(){
   asrLoading=(async()=>{
     status.style.color='var(--dim)';
     status.textContent='Загрузка модели распознавания (один раз)…';
-    const {pipeline}=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3');
+    const {pipeline,env}=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3');
+    try{env.backends.onnx.wasm.numThreads=1}catch(_){}
     const cb=p=>{ if(p.status==='progress') status.textContent='Загрузка модели: '+Math.round(p.progress)+'%'; };
-    const id='onnx-community/whisper-base';
-    try{
-      if(!navigator.gpu) throw 0;
-      asr=await pipeline('automatic-speech-recognition',id,{device:'webgpu',dtype:{encoder_model:'fp32',decoder_model_merged:'q4'},progress_callback:cb});
-    }catch(e){
-      asr=await pipeline('automatic-speech-recognition',id,{device:'wasm',dtype:'q8',progress_callback:cb});
-    }
+    // самая лёгкая модель, только wasm — чтобы Safari не убивал вкладку по памяти
+    asr=await pipeline('automatic-speech-recognition','onnx-community/whisper-tiny',{device:'wasm',dtype:'q8',progress_callback:cb});
     status.textContent='';status.style.color='';
     return asr;
   })();
