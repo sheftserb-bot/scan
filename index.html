@@ -1,140 +1,138 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#111418">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Сканер">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icons/icon-180.png">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css">
-<title>Сканер</title>
+<meta name="apple-mobile-web-app-title" content="Переводчик">
+<meta name="theme-color" content="#0b0d12">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Синхронный переводчик</title>
+<style>
+:root{--bg:#0b0d12;--card:#151922;--line:#252b38;--txt:#f2f4f8;--dim:#8a93a6;--acc:#4f8cff;--rec:#ff4d5a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font-family:-apple-system,system-ui,sans-serif}
+body{display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+header{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+select{flex:1;min-width:0;background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:10px 8px;font-size:16px}
+button{font:inherit;color:var(--txt);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+#swap{font-size:18px}
+#log{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
+.item{margin-bottom:18px}
+.src{color:var(--dim);font-size:16px;line-height:1.35}
+.dst{font-size:24px;line-height:1.3;font-weight:600;margin-top:4px}
+.live .src,.live .dst{opacity:.85}
+.live .dst{color:#9fc0ff}
+.hint{color:var(--dim);text-align:center;margin-top:30vh;padding:0 24px;line-height:1.5}
+footer{display:flex;gap:10px;align-items:center;padding:10px 12px 14px;border-top:1px solid var(--line)}
+#mic{flex:1;padding:16px;font-size:18px;font-weight:600;background:var(--acc);border:0;border-radius:14px}
+#mic.on{background:var(--rec)}
+#status{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 58px);text-align:center;font-size:13px;color:var(--rec);pointer-events:none}
+</style>
 </head>
 <body>
+<header>
+  <select id="from"></select>
+  <button id="swap" title="Поменять">⇄</button>
+  <select id="to"></select>
+  <button id="clear" title="Очистить">✕</button>
+</header>
+<div id="status"></div>
+<div id="log"><div class="hint" id="hint">Выберите языки и нажмите «Начать». Перевод появляется прямо во время речи.</div></div>
+<footer><button id="mic">🎤 Начать</button></footer>
 
-<!-- ГЛАВНЫЙ ЭКРАН -->
-<section id="home" class="screen active">
-  <header class="bar"><h1>Сканер</h1><span id="engineState" class="chip">загрузка движка…</span></header>
-  <main class="home-body">
-    <div id="pagesEmpty" class="empty">
-      <div class="empty-icon">📄</div>
-      <p>Нет страниц. Нажмите «Снять» или «Из галереи».</p>
-    </div>
-    <div id="pageGrid" class="grid"></div>
-  </main>
-  <footer class="dock">
-    <button id="btnCamera" class="primary">📷 Снять</button>
-    <button id="btnGallery">🖼 Из галереи</button>
-    <button id="btnPdf" disabled>PDF</button>
-    <button id="btnMenu">⋯</button>
-  </footer>
-  <input id="fileCamera" type="file" accept="image/*" capture="environment" hidden>
-  <input id="fileGallery" type="file" accept="image/*" multiple hidden>
-</section>
+<script>
+const LANGS=[
+ ['lv','Latviešu','lv-LV'],['ru','Русский','ru-RU'],['en','English','en-US'],
+ ['de','Deutsch','de-DE'],['lt','Lietuvių','lt-LT'],['et','Eesti','et-EE'],
+ ['pl','Polski','pl-PL'],['uk','Українська','uk-UA'],['fr','Français','fr-FR'],
+ ['es','Español','es-ES'],['it','Italiano','it-IT'],['tr','Türkçe','tr-TR']
+];
+const $=id=>document.getElementById(id);
+const from=$('from'),to=$('to'),log=$('log'),mic=$('mic'),status=$('status');
+for(const s of [from,to]) for(const [c,n] of LANGS){const o=document.createElement('option');o.value=c;o.textContent=n;s.appendChild(o)}
+from.value=localStorage.from||'lv'; to.value=localStorage.to||'ru';
+const save=()=>{localStorage.from=from.value;localStorage.to=to.value};
+from.onchange=()=>{save();restart()}; to.onchange=save;
+$('swap').onclick=()=>{[from.value,to.value]=[to.value,from.value];save();restart()};
+$('clear').onclick=()=>{log.innerHTML='';liveEl=null};
 
-<!-- РЕДАКТОР ГРАНИЦ -->
-<section id="crop" class="screen">
-  <header class="bar">
-    <button id="cropCancel" class="ghost">‹ Отмена</button>
-    <h1>Границы листа</h1>
-    <button id="cropAuto" class="ghost">Авто</button>
-  </header>
-  <main class="stage" id="cropStage">
-    <canvas id="cropCanvas"></canvas>
-    <canvas id="loupe" width="110" height="110" hidden></canvas>
-  </main>
-  <footer class="dock">
-    <button id="cropRotL">⟲</button>
-    <button id="cropRotR">⟳</button>
-    <button id="cropFull">Весь кадр</button>
-    <button id="cropDone" class="primary">Готово ›</button>
-  </footer>
-</section>
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+const standalone=navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
+let rec=null,wanted=false,liveEl=null,timer=null,reqId=0,lastSent='';
 
-<!-- ПРОСМОТР / ФИЛЬТРЫ -->
-<section id="view" class="screen">
-  <header class="bar">
-    <button id="viewBack" class="ghost">‹ Назад</button>
-    <h1 id="viewTitle">Страница</h1>
-    <button id="viewDelete" class="ghost danger">Удалить</button>
-  </header>
-  <main class="stage"><canvas id="viewCanvas"></canvas></main>
-  <div class="filters" id="filters">
-    <button data-f="original">Оригинал</button>
-    <button data-f="auto" class="on">Документ</button>
-    <button data-f="color">Цвет+</button>
-    <button data-f="gray">Серый</button>
-    <button data-f="bw">Ч/Б</button>
-  </div>
-  <footer class="dock">
-    <button id="viewRecrop">Границы</button>
-    <button id="viewRotL">⟲</button>
-    <button id="viewRotR">⟳</button>
-    <button id="viewOcr">Текст</button>
-  </footer>
-</section>
+// ---- перевод: Google (без ключа), запасной — MyMemory
+async function translate(text,sl,tl){
+  try{
+    const u='https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&sl='+sl+'&tl='+tl+'&q='+encodeURIComponent(text);
+    const r=await fetch(u); if(!r.ok) throw 0;
+    const j=await r.json(); return j[0].map(x=>x[0]).join('');
+  }catch(e){
+    const r=await fetch('https://api.mymemory.translated.net/get?q='+encodeURIComponent(text)+'&langpair='+sl+'|'+tl);
+    const j=await r.json(); return j.responseData.translatedText;
+  }
+}
 
-<!-- ТЕКСТ (OCR) -->
-<section id="ocr" class="screen">
-  <header class="bar">
-    <button id="ocrBack" class="ghost">‹ Назад</button>
-    <h1>Распознанный текст</h1>
-    <button id="ocrCopy" class="ghost">Копировать</button>
-  </header>
-  <main class="textwrap">
-    <div id="ocrProgress" class="progress"><div id="ocrBar"></div></div>
-    <textarea id="ocrText" spellcheck="false" placeholder="Идёт распознавание…"></textarea>
-  </main>
-  <div class="dock" id="ocrExport">
-    <button id="ocrWord" class="primary">Сохранить в Word</button>
-    <button id="ocrPdf">PDF</button>
-    <button id="ocrTxt">TXT</button>
-  </div>
-  <footer class="dock">
-    <select id="ocrLang">
-      <option value="rus+eng">Русский + English</option>
-      <option value="eng">English</option>
-      <option value="lav+eng">Latviešu + English</option>
-      <option value="rus+lav+eng">RU + LV + EN</option>
-    </select>
-    <button id="ocrRun" class="primary">Распознать</button>
-  </footer>
-</section>
+function makeItem(live){
+  $('hint')&&$('hint').remove();
+  const d=document.createElement('div');d.className='item'+(live?' live':'');
+  d.innerHTML='<div class="src"></div><div class="dst"></div>';
+  log.appendChild(d);return d;
+}
+function scroll(){log.scrollTop=log.scrollHeight}
 
-<!-- МЕНЮ -->
-<div id="sheet" class="sheet" hidden>
-  <div class="sheet-card">
-    <h2 id="menuTitle">Меню</h2>
-    <label class="row">Размер страницы PDF
-      <select id="optPage">
-        <option value="auto">По фото</option>
-        <option value="a4">A4</option>
-        <option value="letter">Letter</option>
-      </select>
-    </label>
-    <label class="row">Качество PDF
-      <select id="optQuality">
-        <option value="0.92">Высокое</option>
-        <option value="0.8" selected>Среднее</option>
-        <option value="0.6">Малый размер</option>
-      </select>
-    </label>
-    <button id="btnUpdate" class="wide">Обновить приложение</button>
-    <button id="btnClear" class="danger wide">Удалить все страницы</button>
-    <button id="btnCloseMenu" class="wide">Закрыть</button>
-  </div>
-</div>
+async function update(el,text,final){
+  el.querySelector('.src').textContent=text;
+  const my=++reqId; el._req=my;
+  try{
+    const t=await translate(text,from.value,to.value);
+    if(el._req===my) el.querySelector('.dst').textContent=t;
+  }catch(e){ el.querySelector('.dst').textContent='… нет связи'; }
+  scroll();
+}
 
-<div id="toast" class="toast" hidden></div>
-<div id="busy" class="busy" hidden><div class="spin"></div><span id="busyText">Обработка…</span></div>
+function schedule(text,final){
+  if(!liveEl) liveEl=makeItem(true);
+  const el=liveEl;
+  el.querySelector('.src').textContent=text; scroll();
+  clearTimeout(timer);
+  if(final){ el.classList.remove('live'); liveEl=null; update(el,text,true); return; }
+  timer=setTimeout(()=>{ if(text!==lastSent){lastSent=text;update(el,text,false)} },350);
+}
 
-<script src="lib/jspdf.umd.min.js"></script>
-<script src="lib/jszip.min.js"></script>
-<script src="export.js"></script>
-<script src="app.js"></script>
+function start(){
+  if(!SR){status.textContent='Распознавание речи не поддерживается. Откройте в Safari.';return}
+  rec=new SR();
+  rec.lang=LANGS.find(l=>l[0]===from.value)[2];
+  rec.continuous=true; rec.interimResults=true;
+  rec.onresult=e=>{
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i], t=r[0].transcript.trim();
+      if(t) schedule(t,r.isFinal);
+    }
+  };
+  rec.onerror=e=>{
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+      wanted=false;ui();
+      status.textContent=standalone?'Нет доступа к микрофону. Откройте страницу в Safari (не с экрана Домой).':'Разрешите микрофон: Настройки → Safari → Микрофон.';
+    }else if(e.error!=='no-speech'&&e.error!=='aborted'){status.textContent='Ошибка: '+e.error}
+  };
+  rec.onend=()=>{ if(wanted) setTimeout(()=>{try{start()}catch(_){}},150); };
+  try{rec.start();status.textContent=''}catch(e){}
+}
+function stop(){wanted=false;try{rec&&rec.stop()}catch(_){}}
+function restart(){ if(wanted){try{rec.onend=null;rec.abort()}catch(_){} start()} }
+function ui(){mic.classList.toggle('on',wanted);mic.textContent=wanted?'⏹ Стоп':'🎤 Начать'}
+mic.onclick=()=>{ if(wanted){stop()}else{wanted=true;start()} ui(); };
+
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+// экран не гаснет во время перевода
+let lock=null;
+async function keepAwake(){try{if(wanted&&navigator.wakeLock)lock=await navigator.wakeLock.request('screen')}catch(_){}}
+mic.addEventListener('click',keepAwake);
+</script>
 </body>
 </html>
