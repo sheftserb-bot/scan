@@ -130,12 +130,16 @@ async function loadASR(){
 }
 
 async function startWhisper(){
+  // микрофон и аудио — сразу, пока действует нажатие кнопки
+  try{
+    wCtx=new (window.AudioContext||window.webkitAudioContext)();
+    wCtx.resume&&wCtx.resume();
+    wStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+  }catch(e){ status.textContent='Нет доступа к микрофону: значок aA → Настройки веб-сайта → Микрофон → Разрешить. ['+(e&&e.name||e)+']';wanted=false;ui();return }
   try{ await loadASR(); }
-  catch(e){ status.style.color='';status.textContent='Не удалось загрузить модель распознавания: '+(e&&e.message||e);wanted=false;ui();return }
-  if(!wanted) return;
-  try{ wStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}}); }
-  catch(e){ status.textContent='Нет доступа к микрофону: значок aA → Настройки веб-сайта → Микрофон → Разрешить. [getUserMedia]';wanted=false;ui();return }
-  wCtx=new (window.AudioContext||window.webkitAudioContext)();
+  catch(e){ status.style.color='';status.textContent='Не удалось загрузить модель: '+(e&&e.message||e);wanted=false;ui();stopWhisper();return }
+  if(!wanted){stopWhisper();return}
+  status.style.color='var(--dim)';status.textContent='Слушаю… (латышский, распознавание в телефоне)';
   try{await wCtx.resume()}catch(_){}
   wSrc=wCtx.createMediaStreamSource(wStream);
   wProc=wCtx.createScriptProcessor(4096,1,1);
@@ -162,7 +166,6 @@ async function startWhisper(){
     }
   };
   wSrc.connect(wProc); wProc.connect(wCtx.destination);
-  status.textContent='';
 }
 
 function flushWhisper(final){
@@ -229,6 +232,8 @@ function restart(){ if(wanted){stopEngines();start()} }
 function ui(){mic.classList.toggle('on',wanted);mic.textContent=wanted?'⏹ Стоп':'🎤 Начать'}
 mic.onclick=()=>{ if(wanted){stop()}else{wanted=true;start()} ui(); };
 
+window.addEventListener('error',e=>{status.style.color='';status.textContent='Ошибка: '+e.message});
+window.addEventListener('unhandledrejection',e=>{status.style.color='';status.textContent='Ошибка: '+(e.reason&&e.reason.message||e.reason)});
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 let lock=null;
 async function keepAwake(){try{if(wanted&&navigator.wakeLock)lock=await navigator.wakeLock.request('screen')}catch(_){}}
