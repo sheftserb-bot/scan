@@ -18,7 +18,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font-family
 body{display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 header{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
 select{flex:1;min-width:0;background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:10px 8px;font-size:16px}
-button{font:inherit;color:var(--txt);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+button{font:inherit;color:var(--txt);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 10px}
 #swap{font-size:18px}
 #log{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
 .item{margin-bottom:18px}
@@ -38,6 +38,7 @@ footer{display:flex;gap:10px;align-items:center;padding:10px 12px 14px;border-to
   <select id="from"></select>
   <button id="swap" title="Поменять">⇄</button>
   <select id="to"></select>
+  <button id="speak" title="Озвучка">🔇</button>
   <button id="clear" title="Очистить">✕</button>
 </header>
 <div id="status"></div>
@@ -51,21 +52,18 @@ const LANGS=[
  ['pl','Polski','pl-PL','polish'],['uk','Українська','uk-UA','ukrainian'],['fr','Français','fr-FR','french'],
  ['es','Español','es-ES','spanish'],['it','Italiano','it-IT','italian'],['tr','Türkçe','tr-TR','turkish']
 ];
-// языки, которые iOS не отдаёт сайтам — для них своё распознавание (Whisper в телефоне)
-const WHISPER_LANGS=['lv','lt','et'];
 const $=id=>document.getElementById(id);
 const from=$('from'),to=$('to'),log=$('log'),mic=$('mic'),status=$('status');
 for(const s of [from,to]) for(const l of LANGS){const o=document.createElement('option');o.value=l[0];o.textContent=l[1];s.appendChild(o)}
-from.value=localStorage.from||'lv'; to.value=localStorage.to||'ru';
-const save=()=>{localStorage.from=from.value;localStorage.to=to.value};
-from.onchange=()=>{save();forceW=false;restart()}; to.onchange=save;
-$('swap').onclick=()=>{[from.value,to.value]=[to.value,from.value];save();forceW=false;restart()};
+from.value=localStorage.from2||'ru'; to.value=localStorage.to2||'en';
+const save=()=>{localStorage.from2=from.value;localStorage.to2=to.value};
+from.onchange=()=>{save();restart()}; to.onchange=save;
+$('swap').onclick=()=>{[from.value,to.value]=[to.value,from.value];save();restart()};
 $('clear').onclick=()=>{log.innerHTML='';liveEl=null};
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 const standalone=navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
-let rec=null,wanted=false,liveEl=null,timer=null,reqId=0,lastSent='',forceW=false;
-const useWhisper=()=>forceW||WHISPER_LANGS.includes(from.value);
+let rec=null,wanted=false,liveEl=null,timer=null,reqId=0,lastSent='',paused=false,ttsOn=localStorage.tts==='1';
 
 // ---- перевод: Google (без ключа), запасной — MyMemory
 async function translate(text,sl,tl){
@@ -78,6 +76,35 @@ async function translate(text,sl,tl){
     const j=await r.json(); return j.responseData.translatedText;
   }
 }
+
+// ---- озвучка перевода
+function pickVoice(code){
+  const vs=speechSynthesis.getVoices(), pre=code.toLowerCase();
+  return vs.find(v=>v.lang.toLowerCase().replace('_','-')===pre)||vs.find(v=>v.lang.toLowerCase().startsWith(pre.split('-')[0]));
+}
+function resumeListening(){
+  if(!paused) return;
+  paused=false;
+  if(wanted) setTimeout(()=>{ if(wanted&&!paused) startIOS() },300);
+}
+function speak(text){
+  if(!('speechSynthesis' in window)) return;
+  const u=new SpeechSynthesisUtterance(text);
+  const code=LANGS.find(l=>l[0]===to.value)[2];
+  u.lang=code; const v=pickVoice(code); if(v) u.voice=v;
+  // на время озвучки отключаем микрофон, чтобы он не слышал динамик
+  if(wanted&&!paused){ paused=true; try{rec&&(rec.onend=null,rec.abort())}catch(_){} }
+  u.onend=u.onerror=()=>{ if(!speechSynthesis.speaking&&!speechSynthesis.pending) resumeListening() };
+  speechSynthesis.speak(u);
+}
+const sp=$('speak');
+function uiSpeak(){sp.textContent=ttsOn?'🔊':'🔇';sp.style.opacity=ttsOn?1:.6}
+sp.onclick=()=>{
+  ttsOn=!ttsOn; localStorage.tts=ttsOn?'1':'0'; uiSpeak();
+  if(ttsOn){ const u=new SpeechSynthesisUtterance(' '); speechSynthesis.speak(u); } // разблокировка звука в iOS
+  else { speechSynthesis.cancel(); resumeListening(); }
+};
+uiSpeak(); speechSynthesis&&speechSynthesis.getVoices();
 function makeItem(live){
   $('hint')&&$('hint').remove();
   const d=document.createElement('div');d.className='item'+(live?' live':'');
@@ -85,12 +112,13 @@ function makeItem(live){
   log.appendChild(d);return d;
 }
 function scroll(){log.scrollTop=log.scrollHeight}
-async function update(el,text){
+async function update(el,text,final){
   el.querySelector('.src').textContent=text;
   const my=++reqId; el._req=my;
   try{
     const t=await translate(text,from.value,to.value);
     if(el._req===my) el.querySelector('.dst').textContent=t;
+    if(final&&ttsOn) speak(t);
   }catch(e){ el.querySelector('.dst').textContent='… нет связи'; }
   scroll();
 }
@@ -99,96 +127,8 @@ function schedule(text,final){
   const el=liveEl;
   el.querySelector('.src').textContent=text; scroll();
   clearTimeout(timer);
-  if(final){ el.classList.remove('live'); liveEl=null; update(el,text); return; }
+  if(final){ el.classList.remove('live'); liveEl=null; update(el,text,true); return; }
   timer=setTimeout(()=>{ if(text!==lastSent){lastSent=text;update(el,text)} },350);
-}
-
-// ================= Whisper в телефоне (для латышского и др.) =================
-let asr=null,asrLoading=null,wCtx=null,wStream=null,wProc=null,wSrc=null;
-let wBuf=[],wLen=0,wPre=[],wSpeech=false,wSilence=0,wSent=0,wPending=0,wChain=Promise.resolve();
-const RATE=16000, THR=0.012;
-
-async function loadASR(){
-  if(asr) return asr;
-  if(asrLoading) return asrLoading;
-  asrLoading=(async()=>{
-    status.style.color='var(--dim)';
-    status.textContent='Загрузка модели распознавания (один раз)…';
-    const {pipeline,env}=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3');
-    try{env.backends.onnx.wasm.numThreads=1}catch(_){}
-    const cb=p=>{ if(p.status==='progress') status.textContent='Загрузка модели: '+Math.round(p.progress)+'%'; };
-    // самая лёгкая модель, только wasm — чтобы Safari не убивал вкладку по памяти
-    asr=await pipeline('automatic-speech-recognition','onnx-community/whisper-tiny',{device:'wasm',dtype:'q8',progress_callback:cb});
-    status.textContent='';status.style.color='';
-    return asr;
-  })();
-  try{return await asrLoading}catch(e){asrLoading=null;throw e}
-}
-
-async function startWhisper(){
-  // микрофон и аудио — сразу, пока действует нажатие кнопки
-  try{
-    wCtx=new (window.AudioContext||window.webkitAudioContext)();
-    wCtx.resume&&wCtx.resume();
-    wStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
-  }catch(e){ status.textContent='Нет доступа к микрофону: значок aA → Настройки веб-сайта → Микрофон → Разрешить. ['+(e&&e.name||e)+']';wanted=false;ui();return }
-  try{ await loadASR(); }
-  catch(e){ status.style.color='';status.textContent='Не удалось загрузить модель: '+(e&&e.message||e);wanted=false;ui();stopWhisper();return }
-  if(!wanted){stopWhisper();return}
-  status.style.color='var(--dim)';status.textContent='Слушаю… (латышский, распознавание в телефоне)';
-  try{await wCtx.resume()}catch(_){}
-  wSrc=wCtx.createMediaStreamSource(wStream);
-  wProc=wCtx.createScriptProcessor(4096,1,1);
-  const ratio=wCtx.sampleRate/RATE;
-  wBuf=[];wLen=0;wPre=[];wSpeech=false;wSilence=0;wSent=0;
-  wProc.onaudioprocess=e=>{
-    const inp=e.inputBuffer.getChannelData(0);
-    const n=Math.floor(inp.length/ratio), out=new Float32Array(n);
-    let sum=0;
-    for(let i=0;i<n;i++){
-      const a=Math.floor(i*ratio), b=Math.min(inp.length,Math.floor((i+1)*ratio));
-      let v=0;for(let j=a;j<b;j++)v+=inp[j]; v/=Math.max(1,b-a); out[i]=v; sum+=v*v;
-    }
-    const rms=Math.sqrt(sum/n), dur=n/RATE;
-    if(rms>THR){
-      if(!wSpeech){wSpeech=true;for(const c of wPre){wBuf.push(c);wLen+=c.length}wPre=[]}
-      wSilence=0;
-    }else if(wSpeech){ wSilence+=dur; }
-    if(wSpeech){ wBuf.push(out); wLen+=n; }
-    else{ wPre.push(out); if(wPre.length>3) wPre.shift(); }
-    if(wSpeech){
-      if(wSilence>0.8||wLen>20*RATE){ flushWhisper(true); }
-      else if(wLen-wSent>2.5*RATE){ flushWhisper(false); }
-    }
-  };
-  wSrc.connect(wProc); wProc.connect(wCtx.destination);
-}
-
-function flushWhisper(final){
-  if(!wLen) return;
-  const audio=new Float32Array(wLen); let o=0; for(const c of wBuf){audio.set(c,o);o+=c.length}
-  if(final){ wBuf=[];wLen=0;wSpeech=false;wSilence=0;wSent=0; }
-  else{ if(wPending>0) return; wSent=wLen; }
-  wPending++;
-  const lang=LANGS.find(l=>l[0]===from.value)[3];
-  wChain=wChain.then(async()=>{
-    try{
-      const r=await asr(audio,{language:lang,task:'transcribe'});
-      const t=(r.text||'').trim();
-      if(t) schedule(t,final);
-      else if(final&&liveEl){liveEl.remove();liveEl=null}
-    }catch(e){ status.textContent='Ошибка распознавания: '+(e&&e.message||e) }
-    wPending--;
-  });
-}
-
-function stopWhisper(){
-  try{ if(wSpeech) flushWhisper(true) }catch(_){}
-  try{wProc&&(wProc.onaudioprocess=null,wProc.disconnect())}catch(_){}
-  try{wSrc&&wSrc.disconnect()}catch(_){}
-  try{wStream&&wStream.getTracks().forEach(t=>t.stop())}catch(_){}
-  try{wCtx&&wCtx.close()}catch(_){}
-  wProc=wSrc=wStream=wCtx=null;
 }
 
 // ================= Распознавание iOS (русский, английский и др.) =================
@@ -205,25 +145,23 @@ function startIOS(){
   };
   rec.onerror=e=>{
     if(e.error==='service-not-allowed'){
-      // iOS не даёт этот язык сайтам — переключаемся на своё распознавание
-      forceW=true; try{rec.onend=null}catch(_){}
-      status.style.color='var(--dim)';status.textContent='iOS не поддерживает этот язык, включаю своё распознавание…';
-      if(wanted) startWhisper();
+      wanted=false;ui();
+      status.textContent='iOS не поддерживает распознавание этого языка. Выберите другой исходный язык (например, русский или английский). [service-not-allowed]';
     }else if(e.error==='not-allowed'){
       wanted=false;ui();
       status.textContent='Сайту запрещён микрофон: значок aA в адресной строке → Настройки веб-сайта → Микрофон → Разрешить, затем обновите страницу. [not-allowed]';
     }else if(e.error!=='no-speech'&&e.error!=='aborted'){status.textContent='Ошибка: '+e.error}
   };
-  rec.onend=()=>{ if(wanted&&!forceW) setTimeout(()=>{try{startIOS()}catch(_){}},150); };
+  rec.onend=()=>{ if(wanted&&!paused) setTimeout(()=>{try{startIOS()}catch(_){}},150); };
   try{rec.start();status.textContent=''}catch(e){}
 }
 
-function start(){ status.style.color=''; if(useWhisper()) startWhisper(); else startIOS(); }
+function start(){ status.style.color=''; startIOS(); }
 function stopEngines(){
   try{ if(rec){rec.onend=null;rec.abort()} }catch(_){}
-  rec=null; stopWhisper();
+  rec=null;
 }
-function stop(){wanted=false;stopEngines()}
+function stop(){wanted=false;paused=false;speechSynthesis&&speechSynthesis.cancel();stopEngines()}
 function restart(){ if(wanted){stopEngines();start()} }
 function ui(){mic.classList.toggle('on',wanted);mic.textContent=wanted?'⏹ Стоп':'🎤 Начать'}
 mic.onclick=()=>{ if(wanted){stop()}else{wanted=true;start()} ui(); };
