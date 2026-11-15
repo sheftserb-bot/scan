@@ -30,7 +30,7 @@ button{font:inherit;color:var(--txt);background:var(--card);border:1px solid var
 footer{display:flex;gap:10px;align-items:center;padding:10px 12px 14px;border-top:1px solid var(--line)}
 #mic{flex:1;padding:16px;font-size:18px;font-weight:600;background:var(--acc);border:0;border-radius:14px}
 #mic.on{background:var(--rec)}
-#status{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 58px);text-align:center;font-size:13px;color:var(--rec);pointer-events:none}
+#status{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 64px);text-align:center;font-size:13px;line-height:1.35;padding:6px 12px;background:var(--bg);color:var(--rec);pointer-events:none}
 </style>
 </head>
 <body>
@@ -115,9 +115,12 @@ function start(){
     }
   };
   rec.onerror=e=>{
-    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+    if(e.error==='service-not-allowed'){
       wanted=false;ui();
-      status.textContent=standalone?'Нет доступа к микрофону. Откройте страницу в Safari (не с экрана Домой).':'Разрешите микрофон: Настройки → Safari → Микрофон.';
+      status.textContent='Диктовка выключена: Настройки → Основные → Клавиатура → Включить диктовку (и Siri и Диктовка в Конфиденциальности → Распознавание речи). [service-not-allowed]';
+    }else if(e.error==='not-allowed'){
+      wanted=false;ui();
+      status.textContent='Сайту запрещён микрофон: значок aA в адресной строке → Настройки веб-сайта → Микрофон → Разрешить, затем обновите страницу. [not-allowed]';
     }else if(e.error!=='no-speech'&&e.error!=='aborted'){status.textContent='Ошибка: '+e.error}
   };
   rec.onend=()=>{ if(wanted) setTimeout(()=>{try{start()}catch(_){}},150); };
